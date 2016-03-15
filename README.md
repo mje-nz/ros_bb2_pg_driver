@@ -11,7 +11,7 @@ This is a ROS node that:
 - Publishes the rectified images in ROS
 
 
-## How is that different from other POintGrey ROS drivers ?
+### How is that different from other POintGrey ROS drivers ?
 
 You can also drive a PointGrey FireWire camera (stereoscopic or not) using the [ROS official pointgrey\_camera\_driver](http://wiki.ros.org/pointgrey_camera_driver), or even the vanilla [camera1394](http://wiki.ros.org/camera1394) driver. However, **those drivers will just get the raw images**. You will have to calibrate the camera and rely on the ROS \[stereo\_\]image\_proc node to process the data.
 
@@ -21,13 +21,32 @@ This driver directly uses the PointGrey proprietary libraries to grab and rectif
 
 (The driver does not do any stereo matching or disparity computation. You will have to plug you own node to do that, or improve that module to do the disparity computation using Triclops.)
 
-## Compatible cameras
+### Compatible cameras
 
 Right now it has only been tested on a [BB2-03S2C-25](https://www.ptgrey.com/bumblebee2-stereo-vison-03-mp-color-firewire-1394a-25mm-sony-icx424-camera) (Color, 0.3MP, 2.5mm focal length).
 
 It should work out of the box for all color BB2 (at a reduced resolution for the 0.8MP models).
 
-Making it work for the mono cameras and the XB3 would require some minor improvements and code adaptation.
+Making it work for the mono cameras and the XB3 would require some minor improvements and code adaptation (see below).
+
+
+## Instructions
+
+### Dependancies
+
+* ROS: std_msgs, sensory_msgs, image_transport
+* FlyCap2 SDK and Triclops SDK (available from the PointGrey web site after creating an account)
+
+### Build instructions
+
+* Copy to the `src/` directory of your catkin workspace
+* Check the path to the FlyCap2 and Triclops headers in the CMakeLists.txt
+* `catkin_make` and `catkin_make install`
+
+### Use
+
+* You can run the node with the provided launchfile: `roslaunch bb2_pg_driver.launch`
+* The node publishes the left and right rectified images on topics `bb2_pg_driver/left/rectified` and `bb2_pg_driver/right/rectified`
 
 
 ## Limitations
