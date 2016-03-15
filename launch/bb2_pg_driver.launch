@@ -1,0 +1,3 @@
+<launch>
+<node pkg="ros_bb2_pg_driver" type="bb2_pg_driver" name="bb2_pg_driver" />
+</launch>

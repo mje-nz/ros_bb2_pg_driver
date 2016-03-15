@@ -36,12 +36,12 @@ I am a beginner at ROS and the present code is little more than a quick hack sui
 
 Known limitations and problems:
 1. Everything is hardcoded:
-  * Resolution is hardcoded to 640x480
-  * It is designed for color cameras and will likely not work with grayscale ones
-  * It uses the camera default calibration
-  * It always uses the first camera (if several are plugged)
-  * Paths to triclops and flycap2 libraries are hardcoded
-  * Node names, etc. are hardcoded
+   * Resolution is hardcoded to 640x480
+   * It is designed for color cameras and will likely not work with grayscale ones
+   * It uses the camera default calibration
+   * It always uses the first camera (if several are plugged)
+   * Paths to triclops and flycap2 libraries are hardcoded
+   * Node names, etc. are hardcoded
 2. There is an issue with the timestamps of the images grabbed through FlyCap2, it seems to be always set to 0. So the timestamps of the Image messages are set to the time when the ROS message are crafted and sent, it is not really the timestamp of the physical image.
 3. The processing is asynchronous and driven by a callback called by the FlyCap2 library. There is no rate control, no buffering, and no guarantee that no frame will be dropped.
 4. It only publishes the rectified images. It does not publish the raw images, and it does not do any disparity computation.
