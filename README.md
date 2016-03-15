@@ -11,7 +11,7 @@ This is a ROS node that:
 - Publishes the rectified images in ROS
 
 
-### How is that different from other POintGrey ROS drivers ?
+### How is that different from other PointGrey ROS drivers ?
 
 You can also drive a PointGrey FireWire camera (stereoscopic or not) using the [ROS official pointgrey\_camera\_driver](http://wiki.ros.org/pointgrey_camera_driver), or even the vanilla [camera1394](http://wiki.ros.org/camera1394) driver. However, **those drivers will just get the raw images**. You will have to calibrate the camera and rely on the ROS \[stereo\_\]image\_proc node to process the data.
 
