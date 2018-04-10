@@ -1,0 +1,3 @@
+<launch>
+  <node pkg="bumblebee2_driver" type="bumblebee2_driver" name="bumblebee2" />
+</launch>

@@ -1,6 +1,8 @@
-// Alexandre Coninx
-// ISIR CNRS/UPMC
-// 17/02/2015
+/* Point Grey Bumblebee2 ROS node using Triclops SDK
+ *
+ * Author: Matthew Edwards (UC), 2018
+ * Author: Alexandre Coninx (ISIR CNRS/UPMC), 17/02/2015
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,10 +14,6 @@
 
 #include <sstream>
 
-
-
-//TODO:
-// - ROS node
 
 #include "rectify_image.hpp"
 
@@ -48,18 +46,11 @@ public:
     }
 
     void init() {
-        camera_.Connect();
+        auto connect_error = camera_.Connect();
+        handleError("FlyCapture2::Camera::Connect()", connect_error, __LINE__);
 
-        // configure camera
-        if (configureCamera(camera_)) {
-            //return EXIT_FAILURE;
-        }
-
-
-        // generate the Triclops context
-        if (generateTriclopsContext(camera_, context_)) {
-            //return EXIT_FAILURE;
-        }
+        configureCamera(camera_);
+        generateTriclopsContext(camera_, context_);
 
         float f, cx, cy, baseline;
         triclopsGetFocalLength(context_, &f);
@@ -84,41 +75,45 @@ public:
     }
 
     ~TriclopsNode() {
-        // Stop capture and close the camera
-        camera_.StopCapture();
-        printf("Capture stopped\n");
+        if (camera_.IsConnected()) {
+            // Stop capture and close the camera
+            auto camera_error = camera_.StopCapture();
+            handleError("FlyCapture2::Camera::StopCapture()", camera_error, __LINE__);
+            printf("Capture stopped\n");
 
-        camera_.Disconnect();
+            camera_error = camera_.Disconnect();
+            handleError("FlyCapture2::Camera::Disconnect()", camera_error, __LINE__);
 
-        // clean up context
-        TriclopsError te;
-        te = triclopsDestroyContext(context_);
-        _HANDLE_TRICLOPS_ERROR("triclopsDestroyContext()", te);
-        printf("%lu image pairs processed.\n", frame_index_);
+            // clean up context
+            auto context_error = triclopsDestroyContext(context_);
+            handleError("triclopsDestroyContext()", context_error, __LINE__);
+            printf("%lu image pairs processed.\n", frame_index_);
+        }
+
     }
 
 private:
 
     void triclopsCallback(FC2::Image *img) {
-        TriclopsColorImage rectified_images[2];
+        TriclopsColorImage left_image, right_image;
         frame_index_++;
 
         // Do procesing
-        process_and_rectify_image(context_, *img, rectified_images[LEFT], rectified_images[RIGHT]);
+        process_and_rectify_image(context_, *img, left_image, right_image);
 
         // Save
         //triclopsSaveColorImage(&rectified_images[LEFT], "left.png", TriImg_Color_Pixel_Format_RGB);
         //triclopsSaveColorImage(&rectified_images[LEFT], "left.png", TriImg_Color_Pixel_Format_RGB);
 
         ros::Time t = ros::Time::now();
-        sensor_msgs::Image left_img, right_img;
+        sensor_msgs::Image left_message, right_message;
         if (pub_left_.getNumSubscribers() > 0) {
-            triclopscolorimage_to_imagemsg(rectified_images[LEFT], left_img, frame_index_, t);
-            pub_left_.publish(left_img);
+            triclopscolorimage_to_imagemsg(left_image, left_message, frame_index_, t);
+            pub_left_.publish(left_message);
         }
         if (pub_right_.getNumSubscribers() > 0) {
-            triclopscolorimage_to_imagemsg(rectified_images[RIGHT], right_img, frame_index_, t);
-            pub_right_.publish(right_img);
+            triclopscolorimage_to_imagemsg(right_image, right_message, frame_index_, t);
+            pub_right_.publish(right_message);
         }
 
     }
@@ -138,8 +133,13 @@ int main(int argc, char *argv[]) {
     ros::init(argc, argv, "bb2_pg_driver");
 
     TriclopsNode node;
-    node.init();
-    node.run();
+    try {
+        node.init();
+        node.run();
+    } catch(const TriclopsException &e) {
+        printf(e.what());
+        return 1;
+    }
 
     ros::spin();
     printf("Exiting\n");

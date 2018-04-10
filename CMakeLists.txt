@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8.3)
-project(ros_bb2_pg_driver)
+project(bumblebee2_driver)
 
 set (CMAKE_CXX_STANDARD 11)
 
@@ -45,8 +45,8 @@ include_directories(
 
 include_directories(include ${catkin_INCLUDE_DIRS} ${FlyCapture2_INCLUDE_DIRS})
 
-add_executable(bb2_pg_driver src/main.cpp src/rectify_image.cpp)
-target_link_libraries(bb2_pg_driver ${catkin_LIBRARIES} ${FlyCapture2_LIBRARIES})
+add_executable(bumblebee2_driver src/main.cpp src/rectify_image.cpp)
+target_link_libraries(bumblebee2_driver ${catkin_LIBRARIES} ${FlyCapture2_LIBRARIES})
 
 
 #############
@@ -58,7 +58,7 @@ target_link_libraries(bb2_pg_driver ${catkin_LIBRARIES} ${FlyCapture2_LIBRARIES}
 
 
 ## Mark executables and/or libraries for installation
-install(TARGETS bb2_pg_driver
+install(TARGETS bumblebee2_driver
 #   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
 #   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
    RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
