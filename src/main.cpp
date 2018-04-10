@@ -25,18 +25,6 @@
 #include <image_transport/image_transport.h>
 
 
-typedef struct {
-    FC2::Camera *camera;
-    TriclopsContext *triclops;
-    unsigned long int i;
-//	ros::Publisher * pub;
-    image_transport::Publisher *pub_left;
-    image_transport::Publisher *pub_right;
-} cb_data_type_t;
-
-volatile sig_atomic_t done = 0;
-
-
 // Inspired from https://github.com/ros-perception/vision_opencv/blob/indigo/cv_bridge/src/cv_bridge.cpp @347-367
 void triclopscolorimage_to_imagemsg(const TriclopsColorImage &tci, sensor_msgs::Image &im, unsigned long int id,
                                     ros::Time t) {
@@ -52,109 +40,109 @@ void triclopscolorimage_to_imagemsg(const TriclopsColorImage &tci, sensor_msgs::
     memcpy((char *) (&im.data[0]), &tci.data[0], size);
 }
 
-void cb_new_image(FC2::Image *img, const void *data) {
-    TriclopsColorImage rectified_images[2];
-    cb_data_type_t *ctxt = (cb_data_type_t *) data;
-    ctxt->i++;
 
-    // Do procesing
-    process_and_rectify_image(*ctxt->triclops, *img, rectified_images[LEFT], rectified_images[RIGHT]);
+class TriclopsNode {
+public:
+    TriclopsNode()
+      : it_(nh_) {
+    }
 
-    // Save
-    //triclopsSaveColorImage(&rectified_images[LEFT], "left.png", TriImg_Color_Pixel_Format_RGB);
-    //triclopsSaveColorImage(&rectified_images[LEFT], "left.png", TriImg_Color_Pixel_Format_RGB);
+    void init() {
+        camera_.Connect();
 
-    ros::Time t = ros::Time::now();
-    sensor_msgs::Image left_img, right_img;
-    triclopscolorimage_to_imagemsg(rectified_images[LEFT], left_img, ctxt->i, t);
-    triclopscolorimage_to_imagemsg(rectified_images[RIGHT], right_img, ctxt->i, t);
-    ctxt->pub_left->publish(left_img);
-    ctxt->pub_right->publish(right_img);
-
-    ros::spinOnce();
-}
+        // configure camera
+        if (configureCamera(camera_)) {
+            //return EXIT_FAILURE;
+        }
 
 
-void terminate(int signum) {
-    done = 1;
-}
+        // generate the Triclops context
+        if (generateTriclopsContext(camera_, context_)) {
+            //return EXIT_FAILURE;
+        }
+
+        float f, cx, cy, baseline;
+        triclopsGetFocalLength(context_, &f);
+        triclopsGetImageCenter(context_, &cy, &cx);
+        //TODO: I reckon the correct principal point is (cx*width, cy*height)
+        // My calibration has f=1326.9, cx=503.7, cy=383.2
+        printf("Stereo parameters: f=%f cx=%f cy=%f\n", f, cx, cy);
+
+
+        pub_left_ = it_.advertise("camera/left/image_rect_color", 10);
+        pub_right_ = it_.advertise("camera/right/image_rect_color", 10);
+    }
+
+    void run() {
+        printf("Starting capture, press Ctrl-C to stop\n");
+        auto callback = [](FC2::Image *img, const void *data) {
+            // Not sure why the callback gets a const void*
+            TriclopsNode *this_ = const_cast<TriclopsNode*>(static_cast<const TriclopsNode*>(data));
+            this_->triclopsCallback(img);
+        };
+        camera_.StartCapture(callback, static_cast<void*>(this));
+    }
+
+    ~TriclopsNode() {
+        // Stop capture and close the camera
+        camera_.StopCapture();
+        printf("Capture stopped\n");
+
+        camera_.Disconnect();
+
+        // clean up context
+        TriclopsError te;
+        te = triclopsDestroyContext(context_);
+        _HANDLE_TRICLOPS_ERROR("triclopsDestroyContext()", te);
+        printf("%lu image pairs processed.\n", frame_index_);
+    }
+
+private:
+
+    void triclopsCallback(FC2::Image *img) {
+        TriclopsColorImage rectified_images[2];
+        frame_index_++;
+
+        // Do procesing
+        process_and_rectify_image(context_, *img, rectified_images[LEFT], rectified_images[RIGHT]);
+
+        // Save
+        //triclopsSaveColorImage(&rectified_images[LEFT], "left.png", TriImg_Color_Pixel_Format_RGB);
+        //triclopsSaveColorImage(&rectified_images[LEFT], "left.png", TriImg_Color_Pixel_Format_RGB);
+
+        ros::Time t = ros::Time::now();
+        sensor_msgs::Image left_img, right_img;
+        if (pub_left_.getNumSubscribers() > 0) {
+            triclopscolorimage_to_imagemsg(rectified_images[LEFT], left_img, frame_index_, t);
+            pub_left_.publish(left_img);
+        }
+        if (pub_right_.getNumSubscribers() > 0) {
+            triclopscolorimage_to_imagemsg(rectified_images[RIGHT], right_img, frame_index_, t);
+            pub_right_.publish(right_img);
+        }
+
+    }
+
+    ros::NodeHandle nh_;
+    image_transport::ImageTransport it_;
+
+    FC2::Camera camera_;
+    TriclopsContext context_;
+    unsigned long int frame_index_;
+    image_transport::Publisher pub_left_;
+    image_transport::Publisher pub_right_;
+};
 
 
 int main(int argc, char *argv[]) {
-    //Sig handler
-    struct sigaction action;
-    memset(&action, 0, sizeof(struct sigaction));
-    action.sa_handler = &terminate;
-    sigaction(SIGTERM, &action, NULL);
-    sigaction(SIGINT, &action, NULL);
+    ros::init(argc, argv, "bb2_pg_driver");
 
+    TriclopsNode node;
+    node.init();
+    node.run();
 
+    ros::spin();
+    printf("Exiting\n");
 
-    //ROS stuff
-    ros::init(argc, argv, "ros_bb2_pg_driver");
-    ros::NodeHandle n;
-    image_transport::ImageTransport it(n);
-    image_transport::Publisher pub_left = it.advertise("ros_bb2_pg_driver/left/rectified", 10);
-    image_transport::Publisher pub_right = it.advertise("ros_bb2_pg_driver/right/rectified", 10);
-
-    //ros::Publisher test_pub = n.advertise<std_msgs::String>("ros_bb2_pg_driver/teststring", 10);
-
-
-    //Output folder
-    // time_t t = time(NULL);   // get time now
-    //struct tm * now = localtime(&t);
-
-
-    // Triclops stuff
-    TriclopsContext triclops;
-    FC2::Camera camera;
-
-    camera.Connect();
-
-    // configure camera
-    if (configureCamera(camera)) {
-        return EXIT_FAILURE;
-    }
-
-
-    // generate the Triclops context
-    if (generateTriclopsContext(camera, triclops)) {
-        return EXIT_FAILURE;
-    }
-
-    cb_data_type_t cb_data;
-    cb_data.camera = &camera;
-    cb_data.triclops = &triclops;
-    cb_data.i = 0;
-    cb_data.pub_left = &pub_left;
-    cb_data.pub_right = &pub_right;
-
-    printf("Starting capture, press Ctrl-C to stop\n");
-    camera.StartCapture(&cb_new_image, (void *) &cb_data);
-
-
-    while (!done && ros::ok());
-
-    printf("Signal caught or ROS died; closing.\n");
-
-
-    // Stop capture and close the camera
-    camera.StopCapture();
-    printf("Capture stopped\n");
-
-    camera.Disconnect();
-
-    // clean up context
-    TriclopsError te;
-    te = triclopsDestroyContext(triclops);
-    _HANDLE_TRICLOPS_ERROR("triclopsDestroyContext()", te);
-    printf("%lu image pairs processed.\n", cb_data.i);
     return 0;
 }
-
-
-void do_capture_loop() {
-    return;
-}
-
-

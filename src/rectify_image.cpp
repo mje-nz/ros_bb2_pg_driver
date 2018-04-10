@@ -43,9 +43,9 @@ int generateTriclopsContext(FC2::Camera &camera,
                                             "getContextFromCamera");
     }
 
-    //Set resolution to 640x480
+    //Set resolution to 1024x768
     TriclopsError te;
-    te = triclopsSetResolution(triclops, 480, 640);
+    te = triclopsSetResolution(triclops, 768, 1024);
     _HANDLE_TRICLOPS_ERROR("triclopsSetResolution()", te);
 
     return 0;
