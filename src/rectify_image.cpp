@@ -54,8 +54,41 @@ void handleError(const std::string &function_name, const Fc2Triclops::ErrorType 
 
 void configureCamera(FC2::Camera &camera) {
     auto mode = FC2T::TWO_CAMERA;
-    auto error = FC2T::setStereoMode(camera, mode);
-    handleError("Fc2Triclops::setStereoMode()", error, __LINE__);
+    auto mode_error = FC2T::setStereoMode(camera, mode);
+    handleError("Fc2Triclops::setStereoMode()", mode_error, __LINE__);
+
+    // Set framerate to 15fps
+    auto framerate = FC2::Property{FC2::FRAME_RATE};
+    framerate.autoManualMode = false;
+    framerate.absControl = false;
+    framerate.onOff = true;  // False to enable extended shutter
+    framerate.valueA = 15;
+    auto camera_error = camera.SetProperty(&framerate);
+    handleError("FlyCapture2::Camera::SetProperty(FRAME_RATE)", camera_error, __LINE__);
+
+    // Disable auto gain and set gain to 0
+    auto gain = FC2::Property{FC2::GAIN};
+    gain.autoManualMode = false;
+    gain.absControl = true;
+    gain.absValue = 0; camera_error = camera.SetProperty(&gain);
+    handleError("FlyCapture2::Camera::SetProperty(GAIN)", camera_error, __LINE__);
+
+    // Disable auto shutter and set shutter to as long as it can go
+    auto shutter = FC2::Property{FC2::SHUTTER};
+    shutter.autoManualMode = false;
+    shutter.absControl = true;
+    shutter.absValue = 1000;
+    camera_error = camera.SetProperty(&shutter);
+    handleError("FlyCapture2::Camera::SetProperty(SHUTTER)", camera_error, __LINE__);
+
+    // Set auto exposure to 0EV
+    auto auto_exposure = FC2::Property{FC2::AUTO_EXPOSURE};
+    auto_exposure.onOff = true;
+    auto_exposure.autoManualMode = false;
+    auto_exposure.absControl = true;
+    auto_exposure.absValue = 0;
+    camera_error = camera.SetProperty(&auto_exposure);
+    handleError("FlyCapture2::Camera::SetProperty(AUTO_EXPOSURE)", camera_error, __LINE__);
 }
 
 
