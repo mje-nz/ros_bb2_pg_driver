@@ -105,68 +105,68 @@ void generateTriclopsContext(FC2::Camera &camera, TriclopsContext &context) {
 }
 
 
-void generateColorStereoInput(TriclopsContext const &context, FC2::Image const &grabbedImage,
-                             ImageContainer &imageCont, TriclopsColorStereoPair &stereoPair) {
-    FC2T::ErrorType fc2TriclopsError;
-    TriclopsError te;
+void debayer_color_image(FC2::Image &in, FC2::Image &out) {
+    auto error = in.SetColorProcessing(FC2::HQ_LINEAR);
+    handleError("FlyCapture2::Image::SetColorProcessing()", error, __LINE__);
+    error = in.Convert(FC2::PIXEL_FORMAT_BGRU, &out);
+    handleError("FlyCapture2::Image::Convert()", error, __LINE__);
+}
 
-    TriclopsColorImage triclopsImageContainer[2];
-    FC2::Image *tmpImage = imageCont.tmp;
-    FC2::Image *unprocessedImage = imageCont.unprocessed;
-
-    // Convert the pixel interleaved raw data to de-interleaved and color processed data
+/** Convert the interleaved bayer image from the camera into two unrectified colour images */
+void unpack_raw_image(const FC2::Image &raw, FC2::Image &color_left, FC2::Image &color_right) {
+    FC2::Image raw_left, raw_right;
     const bool is_little_endian = true;  /*assume little endian*/
-    auto unpack_error = FC2T::unpackUnprocessedRawOrMono16Image(grabbedImage, is_little_endian,
-                                                                tmpImage[RIGHT], tmpImage[LEFT]);
+    auto unpack_error = FC2T::unpackUnprocessedRawOrMono16Image(raw, is_little_endian, raw_left, raw_right);
     handleError("Fc2Triclops::unpackUnprocessedRawOrMono16Image()", unpack_error, __LINE__);
-
-    // preprocess color image
-    for (int i = 0; i < 2; ++i) {
-        auto error = tmpImage[i].SetColorProcessing(FC2::HQ_LINEAR);
-        handleError("FlyCapture2::Image::SetColorProcessing()", error, __LINE__);
-
-        // convert preprocessed color image to BGRU format
-        error = tmpImage[i].Convert(FC2::PIXEL_FORMAT_BGRU, &unprocessedImage[i]);
-        handleError("FlyCapture2::Image::Convert()", error, __LINE__);
-    }
-
-    // create triclops image for right and left lens
-    for (size_t i = 0; i < 2; ++i) {
-        TriclopsColorImage *image = &triclopsImageContainer[i];
-        auto error = triclopsLoadColorImageFromBuffer(
-                reinterpret_cast<TriclopsColorPixel *>(unprocessedImage[i].GetData()),
-                unprocessedImage[i].GetRows(), unprocessedImage[i].GetCols(), unprocessedImage[i].GetStride(),
-                image);
-        handleError("triclopsLoadColorImageFromBuffer()", error, __LINE__);
-    }
-
-    // create stereo input from the triclops images constructed above
-    // pack image data into a TriclopsColorStereoPair structure
-    auto pair_error = triclopsBuildColorStereoPairFromBuffers(context, &triclopsImageContainer[RIGHT],
-                                                              &triclopsImageContainer[LEFT], &stereoPair);
-    handleError("triclopsBuildColorStereoPairFromBuffers()", pair_error, __LINE__);
+    debayer_color_image(raw_left, color_left);
+    debayer_color_image(raw_right, color_right);
 }
 
-void doRectification(const TriclopsContext &context, TriclopsColorStereoPair *colorStereoInput,
-                    TriclopsColorImage &leftImage, TriclopsColorImage &rightImage) {
-    auto error = triclopsColorRectify(context, colorStereoInput);
+
+void triclops_to_fc2_color_image(const TriclopsColorImage &in, FC2::Image &out) {
+    auto rows = static_cast<unsigned int>(in.nrows);
+    auto cols = static_cast<unsigned int>(in.ncols);
+    auto stride = static_cast<unsigned int>(in.rowinc);
+    auto data = reinterpret_cast<unsigned char*>(in.data);
+    auto size = rows*stride;
+    out = FC2::Image(rows, cols, stride, data, size, size, FC2::PIXEL_FORMAT_BGRU);
+}
+
+void rectify_color(const TriclopsContext &context, FC2::Image &color_left, FC2::Image &color_right,
+                   FC2::Image &rect_left, FC2::Image &rect_right) {
+    // Convert to TriclopsImages
+    TriclopsColorImage triclops_left, triclops_right;
+    auto error = triclopsLoadColorImageFromBuffer(
+            reinterpret_cast<TriclopsColorPixel *>(color_left.GetData()),
+            color_left.GetRows(), color_left.GetCols(), color_left.GetStride(), &triclops_left);
+    handleError("triclopsLoadColorImageFromBuffer()", error, __LINE__);
+    error = triclopsLoadColorImageFromBuffer(
+            reinterpret_cast<TriclopsColorPixel *>(color_right.GetData()),
+            color_right.GetRows(), color_right.GetCols(), color_right.GetStride(), &triclops_right);
+    handleError("triclopsLoadColorImageFromBuffer()", error, __LINE__);
+
+    // Pack into TriclopsColorStereoPair
+    TriclopsColorStereoPair stereoPair;
+    error = triclopsBuildColorStereoPairFromBuffers(context, &triclops_right, &triclops_left, &stereoPair);
+    handleError("triclopsBuildColorStereoPairFromBuffers()", error, __LINE__);
+
+    // Rectify
+    error = triclopsColorRectify(context, &stereoPair);
     handleError("triclopsColorRectify()", error, __LINE__);
-    error = triclopsGetColorImage(context, TriImg_RECTIFIED_COLOR, TriCam_LEFT, &leftImage);
+
+    // Get images back out
+    TriclopsColorImage triclops_rect_left, triclops_rect_right;
+    error = triclopsGetColorImage(context, TriImg_RECTIFIED_COLOR, TriCam_LEFT, &triclops_rect_left);
     handleError("triclopsGetImage()", error, __LINE__);
-    error = triclopsGetColorImage(context, TriImg_RECTIFIED_COLOR, TriCam_RIGHT, &rightImage);
+    error = triclopsGetColorImage(context, TriImg_RECTIFIED_COLOR, TriCam_RIGHT, &triclops_rect_right);
     handleError("triclopsSaveColorImage()", error, __LINE__);
+
+    // Extract FC2 images (note Triclops manages these buffers)
+    triclops_to_fc2_color_image(triclops_rect_left, rect_left);
+    triclops_to_fc2_color_image(triclops_rect_right, rect_right);
 }
 
 
-void process_and_rectify_image(TriclopsContext &context, const FC2::Image &initialimage,
-                              TriclopsColorImage &out_left, TriclopsColorImage &out_right) {
-    // declare container of images used for processing
-    ImageContainer imageContainer;
-    TriclopsColorStereoPair colorStereoInput;
-
-    // generate color triclops input from grabbed image
-    generateColorStereoInput(context, initialimage, imageContainer, colorStereoInput);
-
-    // carry out rectification from triclops color input
-    doRectification(context, &colorStereoInput, out_left, out_right);
+void color_to_mono(const FC2::Image &in, FC2::Image &out) {
+    in.Convert(FC2::PIXEL_FORMAT_MONO8, &out);
 }

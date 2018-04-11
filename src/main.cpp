@@ -15,25 +15,36 @@
 #include "rectify_image.hpp"
 
 
-
 // Inspired from https://github.com/ros-perception/vision_opencv/blob/indigo/cv_bridge/src/cv_bridge.cpp @347-367
-void triclopscolorimage_to_imagemsg(const TriclopsColorImage &tci, sensor_msgs::Image &im, unsigned int id) {
-    im.header.seq = id;
-    im.height = static_cast<uint32_t>(tci.nrows);
-    im.width = static_cast<uint32_t>(tci.ncols);
-    im.encoding = std::string("bgra8");
-    im.is_bigendian = 0;
-    im.step = static_cast<uint32_t>(tci.rowinc);
-    size_t size = im.step*im.height;
-    im.data.resize(size);
-    memcpy((char *) (&im.data[0]), &tci.data[0], size);
+void fc2_to_ros_image(const FC2::Image &in, sensor_msgs::Image &out, unsigned int id, ros::Time t) {
+    out.header.stamp = t;
+    out.header.seq = id;
+    out.height = in.GetRows();
+    out.width = in.GetCols();
+    auto pixel_format = in.GetPixelFormat();
+    switch (pixel_format) {
+        case FC2::PIXEL_FORMAT_MONO8:
+            out.encoding = "mono8";
+            break;
+        case FC2::PIXEL_FORMAT_BGRU:
+            out.encoding = "bgra8";
+            break;
+        default:
+            ROS_WARN_ONCE("Unknown pixel format %X", pixel_format);
+            out.encoding = "raw";
+    }
+    out.is_bigendian = 0;
+    out.step = in.GetStride();
+    size_t size = out.step*out.height;
+    out.data.resize(size);
+    memcpy((char *) (&out.data[0]), &in.GetData()[0], size);
 }
 
 
 class TriclopsNode {
 public:
     TriclopsNode()
-      : it_(nh_) {
+      : nh_("camera"), it_(nh_) {
     }
 
     void init() {
@@ -45,21 +56,30 @@ public:
 
         // Fill in camera info
         float f, cx, cy, baseline;
-        camera_info_left_.width = 1024;  // Hardcoded for now
-        camera_info_left_.height = 768;
+        left_camera_info_.width = 1024;  // Hardcoded for now
+        left_camera_info_.height = 768;
         triclopsGetFocalLength(context_, &f);
-        camera_info_left_.P[0] = f;
-        camera_info_left_.P[5] = f;
+        left_camera_info_.P[0] = f;
+        left_camera_info_.P[5] = f;
         triclopsGetImageCenter(context_, &cy, &cx);
-        camera_info_left_.P[2] = cx*camera_info_left_.width;
-        camera_info_left_.P[6] = cy*camera_info_left_.height;
-        camera_info_left_.P[10] = 1;
-        camera_info_right_ = camera_info_left_;
+        left_camera_info_.P[2] = cx*left_camera_info_.width;
+        left_camera_info_.P[6] = cy*left_camera_info_.height;
+        left_camera_info_.P[10] = 1;
+        right_camera_info_ = left_camera_info_;
         triclopsGetBaseline(context_, &baseline);
-        camera_info_right_.P[3] = -f*baseline;
+        right_camera_info_.P[3] = -f*baseline;
 
-        pub_left_ = it_.advertiseCamera("camera/left/image_rect_color", 10);
-        pub_right_ = it_.advertiseCamera("camera/right/image_rect_color", 10);
+        // Set up publishers
+        left_info_pub_ = nh_.advertise<sensor_msgs::CameraInfo>("left/camera_info", 1);
+        left_color_pub_ = it_.advertise("left/image_color", 10);
+        left_mono_pub_ = it_.advertise("left/image_mono", 10);
+        left_rect_color_pub_ = it_.advertise("left/image_rect_color", 10);
+        left_rect_mono_pub_ = it_.advertise("left/image_rect_mono", 10);
+        right_info_pub_ = nh_.advertise<sensor_msgs::CameraInfo>("right/camera_info", 1);
+        right_color_pub_ = it_.advertise("right/image_color", 10);
+        right_mono_pub_ = it_.advertise("right/image_mono", 10);
+        right_rect_color_pub_ = it_.advertise("right/image_rect_color", 10);
+        right_rect_mono_pub_ = it_.advertise("right/image_rect_mono", 10);
     }
 
     void run() {
@@ -85,44 +105,80 @@ public:
             // clean up context
             auto context_error = triclopsDestroyContext(context_);
             handleError("triclopsDestroyContext()", context_error, __LINE__);
-            printf("%lu image pairs processed.\n", frame_index_);
+            printf("%u image pairs processed.\n", frame_index_);
         }
 
     }
 
 private:
 
-    void triclopsCallback(FC2::Image *img) {
-        TriclopsColorImage left_image, right_image;
-        frame_index_++;
-
-        // Do procesing
-        process_and_rectify_image(context_, *img, left_image, right_image);
-
-        // Save
-        //triclopsSaveColorImage(&rectified_images[LEFT], "left.png", TriImg_Color_Pixel_Format_RGB);
-        //triclopsSaveColorImage(&rectified_images[LEFT], "left.png", TriImg_Color_Pixel_Format_RGB);
+    void triclopsCallback(FC2::Image *raw_image) {
+        // Reuse these for each topic
+        sensor_msgs::Image message;
+        FC2::Image mono;
 
         ros::Time t = ros::Time::now();
-        sensor_msgs::Image left_message, right_message;
-        if (pub_left_.getNumSubscribers() > 0) {
-            triclopscolorimage_to_imagemsg(left_image, left_message, frame_index_);
-            camera_info_left_.header.seq = frame_index_;
-            pub_left_.publish(left_message, camera_info_left_, t);
+        frame_index_++;
+        left_camera_info_.header.stamp = t;
+        left_camera_info_.header.seq = frame_index_;
+        right_camera_info_.header = left_camera_info_.header;
+        left_info_pub_.publish(left_camera_info_);
+        right_info_pub_.publish(right_camera_info_);
+
+        // Publish unrectified image no matter what to make this easier
+        FC2::Image left_color, right_color;
+        unpack_raw_image(*raw_image, left_color, right_color);
+        fc2_to_ros_image(left_color, message, frame_index_, t);
+        left_color_pub_.publish(message);
+        fc2_to_ros_image(right_color, message, frame_index_, t);
+        right_color_pub_.publish(message);
+
+        if (left_mono_pub_.getNumSubscribers() > 0) {
+            color_to_mono(left_color, mono);
+            fc2_to_ros_image(mono, message, frame_index_, t);
+            left_mono_pub_.publish(message);
         }
-        if (pub_right_.getNumSubscribers() > 0) {
-            triclopscolorimage_to_imagemsg(right_image, right_message, frame_index_);
-            camera_info_right_.header.seq = frame_index_;
-            pub_right_.publish(right_message, camera_info_right_, t);
+        if (right_mono_pub_.getNumSubscribers() > 0) {
+            color_to_mono(right_color, mono);
+            fc2_to_ros_image(mono, message, frame_index_, t);
+            right_mono_pub_.publish(message);
         }
 
+        const bool should_rectify = (
+            left_rect_color_pub_.getNumSubscribers() > 0 ||
+            right_rect_color_pub_.getNumSubscribers() > 0 ||
+            left_rect_mono_pub_.getNumSubscribers() > 0 ||
+            right_rect_mono_pub_.getNumSubscribers() > 0
+        );
+        if (should_rectify) {
+            FC2::Image left_rect_color, right_rect_color;
+            rectify_color(context_, left_color, right_color, left_rect_color, right_rect_color);
+            fc2_to_ros_image(left_rect_color, message, frame_index_, t);
+            left_rect_color_pub_.publish(message);
+            fc2_to_ros_image(right_rect_color, message, frame_index_, t);
+            right_rect_color_pub_.publish(message);
+
+            if (left_rect_mono_pub_.getNumSubscribers() > 0) {
+                color_to_mono(left_rect_color, mono);
+                fc2_to_ros_image(mono, message, frame_index_, t);
+                left_rect_mono_pub_.publish(message);
+            }
+            if (right_rect_mono_pub_.getNumSubscribers() > 0) {
+                color_to_mono(right_rect_color, mono);
+                fc2_to_ros_image(mono, message, frame_index_, t);
+                right_rect_mono_pub_.publish(message);
+            }
+
+        }
     }
 
     ros::NodeHandle nh_;
     image_transport::ImageTransport it_;
 
-    image_transport::CameraPublisher pub_left_, pub_right_;
-    sensor_msgs::CameraInfo camera_info_left_, camera_info_right_;
+    ros::Publisher left_info_pub_, right_info_pub_;
+    image_transport::Publisher left_color_pub_, left_mono_pub_, left_rect_color_pub_, left_rect_mono_pub_;
+    image_transport::Publisher right_color_pub_, right_mono_pub_, right_rect_color_pub_, right_rect_mono_pub_;
+    sensor_msgs::CameraInfo left_camera_info_, right_camera_info_;
 
     FC2::Camera camera_;
     TriclopsContext context_ = nullptr;

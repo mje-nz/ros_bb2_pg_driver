@@ -29,14 +29,13 @@ void handleError(const std::string &function_name, const Fc2Triclops::ErrorType 
 namespace FC2 = FlyCapture2;
 namespace FC2T = Fc2Triclops;
 
-// configure the connected camera
 void configureCamera(FC2::Camera &camera);
-
-// generate triclops context from connected camera
 void generateTriclopsContext(FC2::Camera &camera, TriclopsContext &context);
 
 
-void process_and_rectify_image(TriclopsContext &context, const FC2::Image &initialimage,
-                              TriclopsColorImage &out_left, TriclopsColorImage &out_right);
+void unpack_raw_image(const FC2::Image &raw, FC2::Image &color_left, FC2::Image &color_right);
+void rectify_color(const TriclopsContext &context, FC2::Image &color_left, FC2::Image &color_right,
+                   FC2::Image &rect_left, FC2::Image &rect_right);
+void color_to_mono(const FC2::Image &in, FC2::Image &out);
 
 #endif
