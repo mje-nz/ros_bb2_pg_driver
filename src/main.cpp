@@ -16,9 +16,7 @@
 
 
 // Inspired from https://github.com/ros-perception/vision_opencv/blob/indigo/cv_bridge/src/cv_bridge.cpp @347-367
-void fc2_to_ros_image(const FC2::Image &in, sensor_msgs::Image &out, unsigned int id, ros::Time t) {
-    out.header.stamp = t;
-    out.header.seq = id;
+void fc2_to_ros_image(const FC2::Image &in, sensor_msgs::Image &out) {
     out.height = in.GetRows();
     out.width = in.GetCols();
     auto pixel_format = in.GetPixelFormat();
@@ -55,6 +53,7 @@ public:
         generateTriclopsContext(camera_, context_);
 
         // Fill in camera info
+        left_camera_info_.header.frame_id = "bumblebee2_optical";
         float f, cx, cy, baseline;
         left_camera_info_.width = 1024;  // Hardcoded for now
         left_camera_info_.height = 768;
@@ -71,15 +70,15 @@ public:
 
         // Set up publishers
         left_info_pub_ = nh_.advertise<sensor_msgs::CameraInfo>("left/camera_info", 1);
-        left_color_pub_ = it_.advertise("left/image_color", 10);
-        left_mono_pub_ = it_.advertise("left/image_mono", 10);
-        left_rect_color_pub_ = it_.advertise("left/image_rect_color", 10);
-        left_rect_mono_pub_ = it_.advertise("left/image_rect_mono", 10);
+        left_color_pub_ = it_.advertise("left/image_color", 1);
+        left_mono_pub_ = it_.advertise("left/image_mono", 1);
+        left_rect_color_pub_ = it_.advertise("left/image_rect_color", 1);
+        left_rect_mono_pub_ = it_.advertise("left/image_rect_mono", 1);
         right_info_pub_ = nh_.advertise<sensor_msgs::CameraInfo>("right/camera_info", 1);
-        right_color_pub_ = it_.advertise("right/image_color", 10);
-        right_mono_pub_ = it_.advertise("right/image_mono", 10);
-        right_rect_color_pub_ = it_.advertise("right/image_rect_color", 10);
-        right_rect_mono_pub_ = it_.advertise("right/image_rect_mono", 10);
+        right_color_pub_ = it_.advertise("right/image_color", 1);
+        right_mono_pub_ = it_.advertise("right/image_mono", 1);
+        right_rect_color_pub_ = it_.advertise("right/image_rect_color", 1);
+        right_rect_mono_pub_ = it_.advertise("right/image_rect_mono", 1);
     }
 
     void run() {
@@ -122,25 +121,26 @@ private:
         left_camera_info_.header.stamp = t;
         left_camera_info_.header.seq = frame_index_;
         right_camera_info_.header = left_camera_info_.header;
+        message.header = left_camera_info_.header;
         left_info_pub_.publish(left_camera_info_);
         right_info_pub_.publish(right_camera_info_);
 
         // Publish unrectified image no matter what to make this easier
         FC2::Image left_color, right_color;
         unpack_raw_image(*raw_image, left_color, right_color);
-        fc2_to_ros_image(left_color, message, frame_index_, t);
+        fc2_to_ros_image(left_color, message);
         left_color_pub_.publish(message);
-        fc2_to_ros_image(right_color, message, frame_index_, t);
+        fc2_to_ros_image(right_color, message);
         right_color_pub_.publish(message);
 
         if (left_mono_pub_.getNumSubscribers() > 0) {
             color_to_mono(left_color, mono);
-            fc2_to_ros_image(mono, message, frame_index_, t);
+            fc2_to_ros_image(mono, message);
             left_mono_pub_.publish(message);
         }
         if (right_mono_pub_.getNumSubscribers() > 0) {
             color_to_mono(right_color, mono);
-            fc2_to_ros_image(mono, message, frame_index_, t);
+            fc2_to_ros_image(mono, message);
             right_mono_pub_.publish(message);
         }
 
@@ -153,19 +153,19 @@ private:
         if (should_rectify) {
             FC2::Image left_rect_color, right_rect_color;
             rectify_color(context_, left_color, right_color, left_rect_color, right_rect_color);
-            fc2_to_ros_image(left_rect_color, message, frame_index_, t);
+            fc2_to_ros_image(left_rect_color, message);
             left_rect_color_pub_.publish(message);
-            fc2_to_ros_image(right_rect_color, message, frame_index_, t);
+            fc2_to_ros_image(right_rect_color, message);
             right_rect_color_pub_.publish(message);
 
             if (left_rect_mono_pub_.getNumSubscribers() > 0) {
                 color_to_mono(left_rect_color, mono);
-                fc2_to_ros_image(mono, message, frame_index_, t);
+                fc2_to_ros_image(mono, message);
                 left_rect_mono_pub_.publish(message);
             }
             if (right_rect_mono_pub_.getNumSubscribers() > 0) {
                 color_to_mono(right_rect_color, mono);
-                fc2_to_ros_image(mono, message, frame_index_, t);
+                fc2_to_ros_image(mono, message);
                 right_rect_mono_pub_.publish(message);
             }
 
