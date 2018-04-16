@@ -1,3 +1,12 @@
 <launch>
-  <node pkg="bumblebee2_driver" type="bumblebee2_driver" name="bumblebee2" />
+  <node pkg="bumblebee2_driver" type="bumblebee2_driver" name="bumblebee2" output="screen" />
+
+  <!-- from pointgrey_camera_description/launch/view_model.launch -->
+  <node name="bumblebee_robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" respawn="false" />
+  <param name="robot_description"
+    command="$(find xacro)/xacro.py '$(find pointgrey_camera_description)/urdf/test_bumblebee2.urdf.xacro'" />
+
+  <!-- Specific to UR arm experiment -->
+  <node name="ee_link_to_bumblebee_tf_publisher" pkg="tf" type="static_transform_publisher"
+    args="0 0 0 0 1.57 0 ee_link bumblebee2 100" />
 </launch>
