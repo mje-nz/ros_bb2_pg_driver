@@ -89,6 +89,14 @@ void configureCamera(FC2::Camera &camera) {
     auto_exposure.absValue = 0;
     camera_error = camera.SetProperty(&auto_exposure);
     handleError("FlyCapture2::Camera::SetProperty(AUTO_EXPOSURE)", camera_error, __LINE__);
+
+    // Enable buffered mode to (hopefully) prevent glitches
+    auto config = FC2::FC2Config();
+    camera.GetConfiguration(&config);
+    config.highPerformanceRetrieveBuffer = true;
+    config.numBuffers = 10;  // Arbitrary large number to avoid stomping buffers
+    config.grabMode = FC2::DROP_FRAMES;  // Use the most recent frame in the buffers
+    camera.SetConfiguration(&config);
 }
 
 
