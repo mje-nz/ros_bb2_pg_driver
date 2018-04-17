@@ -94,7 +94,7 @@ void configureCamera(FC2::Camera &camera) {
     auto config = FC2::FC2Config();
     camera.GetConfiguration(&config);
     config.highPerformanceRetrieveBuffer = true;
-    config.numBuffers = 10;  // Arbitrary large number to avoid stomping buffers
+    config.numBuffers = 100;  // Arbitrary large number to avoid stomping buffers
     config.grabMode = FC2::DROP_FRAMES;  // Use the most recent frame in the buffers
     camera.SetConfiguration(&config);
 }

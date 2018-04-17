@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <mutex>
 
 #include <ros/ros.h>
 #include <image_transport/image_transport.h>
@@ -112,6 +113,8 @@ public:
 private:
 
     void triclopsCallback(FC2::Image *raw_image) {
+        std::lock_guard<std::mutex> lock(mutex_);
+
         // Reuse these for each topic
         sensor_msgs::Image message;
         FC2::Image mono;
@@ -179,6 +182,8 @@ private:
     image_transport::Publisher left_color_pub_, left_mono_pub_, left_rect_color_pub_, left_rect_mono_pub_;
     image_transport::Publisher right_color_pub_, right_mono_pub_, right_rect_color_pub_, right_rect_mono_pub_;
     sensor_msgs::CameraInfo left_camera_info_, right_camera_info_;
+
+    std::mutex mutex_;
 
     FC2::Camera camera_;
     TriclopsContext context_ = nullptr;
