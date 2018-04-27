@@ -94,8 +94,8 @@ void configureCamera(FC2::Camera &camera) {
     auto config = FC2::FC2Config();
     camera.GetConfiguration(&config);
     config.highPerformanceRetrieveBuffer = true;
-    config.numBuffers = 100;  // Arbitrary large number to avoid stomping buffers
-    config.grabMode = FC2::DROP_FRAMES;  // Use the most recent frame in the buffers
+    config.numBuffers = 3;
+    config.grabMode = FC2::BUFFER_FRAMES;
     camera.SetConfiguration(&config);
 }
 
@@ -169,9 +169,12 @@ void rectify_color(const TriclopsContext &context, FC2::Image &color_left, FC2::
     error = triclopsGetColorImage(context, TriImg_RECTIFIED_COLOR, TriCam_RIGHT, &triclops_rect_right);
     handleError("triclopsSaveColorImage()", error, __LINE__);
 
-    // Extract FC2 images (note Triclops manages these buffers)
-    triclops_to_fc2_color_image(triclops_rect_left, rect_left);
-    triclops_to_fc2_color_image(triclops_rect_right, rect_right);
+    // Extract FC2 images (note Triclops manages these buffers, so we're being extra safe and returning a copy)
+    FC2::Image tmp;
+    triclops_to_fc2_color_image(triclops_rect_left, tmp);
+    rect_left.DeepCopy(&tmp);
+    triclops_to_fc2_color_image(triclops_rect_right, tmp);
+    rect_right.DeepCopy(&tmp);
 }
 
 
